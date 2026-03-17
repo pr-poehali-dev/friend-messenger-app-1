@@ -3,10 +3,15 @@ import json
 import os
 import psycopg2
 
-SCHEMA = 't_p58878170_friend_messenger_app'
+SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p58878170_friend_messenger_app')
 
 def get_conn():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+    dsn = os.environ['DATABASE_URL']
+    if '?' in dsn:
+        dsn += f'&options=-csearch_path%3D{SCHEMA}'
+    else:
+        dsn += f'?options=-csearch_path%3D{SCHEMA}'
+    return psycopg2.connect(dsn)
 
 def handler(event: dict, context) -> dict:
     headers = {
@@ -34,8 +39,8 @@ def handler(event: dict, context) -> dict:
         if action == 'search':
             q = params.get('q', '')
             cur.execute(f"""
-                SELECT id, username, display_name, avatar, last_seen
-                FROM {SCHEMA}.users
+                SELECT id, username, display_name, avatar
+                FROM users
                 WHERE (username ILIKE '%{q}%' OR display_name ILIKE '%{q}%')
                 AND id != {user_id}
                 LIMIT 20
@@ -46,7 +51,6 @@ def handler(event: dict, context) -> dict:
                 {'id': r[0], 'username': r[1], 'display_name': r[2], 'avatar': r[3]} for r in rows
             ])}
 
-        # List chats for user
         cur.execute(f"""
             SELECT
                 c.id,
@@ -56,13 +60,13 @@ def handler(event: dict, context) -> dict:
                 u2.display_name as other_name,
                 u2.avatar as other_avatar,
                 u2.last_seen,
-                (SELECT text FROM {SCHEMA}.messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_msg,
-                (SELECT created_at FROM {SCHEMA}.messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_time,
-                (SELECT COUNT(*) FROM {SCHEMA}.messages WHERE chat_id = c.id AND is_read = FALSE AND sender_id != {user_id}) as unread
-            FROM {SCHEMA}.chats c
-            JOIN {SCHEMA}.chat_members cm ON cm.chat_id = c.id AND cm.user_id = {user_id}
-            LEFT JOIN {SCHEMA}.chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != {user_id} AND c.is_group = FALSE
-            LEFT JOIN {SCHEMA}.users u2 ON u2.id = cm2.user_id
+                (SELECT text FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_msg,
+                (SELECT created_at FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_time,
+                (SELECT COUNT(*) FROM messages WHERE chat_id = c.id AND is_read = FALSE AND sender_id != {user_id}) as unread
+            FROM chats c
+            JOIN chat_members cm ON cm.chat_id = c.id AND cm.user_id = {user_id}
+            LEFT JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != {user_id} AND c.is_group = FALSE
+            LEFT JOIN users u2 ON u2.id = cm2.user_id
             ORDER BY last_time DESC NULLS LAST
         """)
         rows = cur.fetchall()
@@ -88,11 +92,10 @@ def handler(event: dict, context) -> dict:
 
         if action == 'create_or_get':
             other_id = body.get('other_user_id')
-            # Check if direct chat already exists
             cur.execute(f"""
-                SELECT c.id FROM {SCHEMA}.chats c
-                JOIN {SCHEMA}.chat_members cm1 ON cm1.chat_id = c.id AND cm1.user_id = {user_id}
-                JOIN {SCHEMA}.chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id = {other_id}
+                SELECT c.id FROM chats c
+                JOIN chat_members cm1 ON cm1.chat_id = c.id AND cm1.user_id = {user_id}
+                JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id = {other_id}
                 WHERE c.is_group = FALSE
                 LIMIT 1
             """)
@@ -101,10 +104,10 @@ def handler(event: dict, context) -> dict:
                 conn.close()
                 return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'chat_id': row[0]})}
 
-            cur.execute(f"INSERT INTO {SCHEMA}.chats (is_group) VALUES (FALSE) RETURNING id")
+            cur.execute("INSERT INTO chats (is_group) VALUES (FALSE) RETURNING id")
             chat_id = cur.fetchone()[0]
-            cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES ({chat_id}, {user_id})")
-            cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES ({chat_id}, {other_id})")
+            cur.execute(f"INSERT INTO chat_members (chat_id, user_id) VALUES ({chat_id}, {user_id})")
+            cur.execute(f"INSERT INTO chat_members (chat_id, user_id) VALUES ({chat_id}, {other_id})")
             conn.commit()
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'chat_id': chat_id})}

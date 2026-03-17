@@ -3,10 +3,15 @@ import json
 import os
 import psycopg2
 
-SCHEMA = 't_p58878170_friend_messenger_app'
+SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p58878170_friend_messenger_app')
 
 def get_conn():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+    dsn = os.environ['DATABASE_URL']
+    if '?' in dsn:
+        dsn += f'&options=-csearch_path%3D{SCHEMA}'
+    else:
+        dsn += f'?options=-csearch_path%3D{SCHEMA}'
+    return psycopg2.connect(dsn)
 
 def handler(event: dict, context) -> dict:
     headers = {
@@ -34,8 +39,8 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor()
         cur.execute(f"""
             SELECT m.id, m.text, m.created_at, m.sender_id, m.is_read, u.display_name, u.avatar
-            FROM {SCHEMA}.messages m
-            JOIN {SCHEMA}.users u ON u.id = m.sender_id
+            FROM messages m
+            JOIN users u ON u.id = m.sender_id
             WHERE m.chat_id = {chat_id}
             ORDER BY m.created_at ASC
             LIMIT 100
@@ -69,7 +74,7 @@ def handler(event: dict, context) -> dict:
         cur = conn.cursor()
         safe_text = text.replace("'", "''")
         cur.execute(f"""
-            INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text)
+            INSERT INTO messages (chat_id, sender_id, text)
             VALUES ({chat_id}, {user_id}, '{safe_text}')
             RETURNING id, created_at
         """)
