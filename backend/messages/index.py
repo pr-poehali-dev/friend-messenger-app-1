@@ -6,9 +6,7 @@ import psycopg2
 SCHEMA = 't_p58878170_friend_messenger_app'
 
 def get_conn():
-    conn = psycopg2.connect(os.environ['DATABASE_URL'])
-    conn.autocommit = True
-    return conn
+    return psycopg2.connect(os.environ['DATABASE_URL'])
 
 def handler(event: dict, context) -> dict:
     headers = {
@@ -27,20 +25,13 @@ def handler(event: dict, context) -> dict:
     if not user_id:
         return {'statusCode': 401, 'headers': headers, 'body': json.dumps({'error': 'Не авторизован'})}
 
-    conn = get_conn()
-    cur = conn.cursor()
-
     if method == 'GET':
         chat_id = params.get('chat_id')
         if not chat_id:
-            conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'chat_id обязателен'})}
 
-        try:
-            cur.execute(f"UPDATE {SCHEMA}.messages SET is_read = TRUE WHERE chat_id = {chat_id} AND sender_id != {user_id}")
-        except Exception:
-            pass
-
+        conn = get_conn()
+        cur = conn.cursor()
         cur.execute(f"""
             SELECT m.id, m.text, m.created_at, m.sender_id, m.is_read, u.display_name, u.avatar
             FROM {SCHEMA}.messages m
@@ -72,9 +63,10 @@ def handler(event: dict, context) -> dict:
         text = (body.get('text') or '').strip()
 
         if not chat_id or not text:
-            conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Заполните все поля'})}
 
+        conn = get_conn()
+        cur = conn.cursor()
         safe_text = text.replace("'", "''")
         cur.execute(f"""
             INSERT INTO {SCHEMA}.messages (chat_id, sender_id, text)
@@ -82,6 +74,7 @@ def handler(event: dict, context) -> dict:
             RETURNING id, created_at
         """)
         row = cur.fetchone()
+        conn.commit()
         conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
             'id': row[0],
@@ -93,5 +86,4 @@ def handler(event: dict, context) -> dict:
             'type': 'text',
         })}
 
-    conn.close()
     return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'Неизвестное действие'})}
