@@ -6,7 +6,9 @@ import psycopg2
 SCHEMA = 't_p58878170_friend_messenger_app'
 
 def get_conn():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    return conn
 
 def handler(event: dict, context) -> dict:
     headers = {
@@ -105,7 +107,6 @@ def handler(event: dict, context) -> dict:
             chat_id = cur.fetchone()[0]
             cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES ({chat_id}, {user_id})")
             cur.execute(f"INSERT INTO {SCHEMA}.chat_members (chat_id, user_id) VALUES ({chat_id}, {other_id})")
-            conn.commit()
             conn.close()
             return {'statusCode': 200, 'headers': headers, 'body': json.dumps({'chat_id': chat_id})}
 

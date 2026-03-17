@@ -6,7 +6,9 @@ import psycopg2
 SCHEMA = 't_p58878170_friend_messenger_app'
 
 def get_conn():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    return conn
 
 def handler(event: dict, context) -> dict:
     headers = {
@@ -34,9 +36,10 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return {'statusCode': 400, 'headers': headers, 'body': json.dumps({'error': 'chat_id обязателен'})}
 
-        # Mark messages as read
-        cur.execute(f"UPDATE {SCHEMA}.messages SET is_read = TRUE WHERE chat_id = {chat_id} AND sender_id != {user_id}")
-        conn.commit()
+        try:
+            cur.execute(f"UPDATE {SCHEMA}.messages SET is_read = TRUE WHERE chat_id = {chat_id} AND sender_id != {user_id}")
+        except Exception:
+            pass
 
         cur.execute(f"""
             SELECT m.id, m.text, m.created_at, m.sender_id, m.is_read, u.display_name, u.avatar
@@ -79,7 +82,6 @@ def handler(event: dict, context) -> dict:
             RETURNING id, created_at
         """)
         row = cur.fetchone()
-        conn.commit()
         conn.close()
         return {'statusCode': 200, 'headers': headers, 'body': json.dumps({
             'id': row[0],
