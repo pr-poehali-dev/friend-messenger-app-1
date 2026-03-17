@@ -78,7 +78,9 @@ export const api = {
 
   async getMessages(userId: number, chatId: number): Promise<MessageItem[]> {
     const res = await fetch(`${URLS.messages}?user_id=${userId}&chat_id=${chatId}`);
-    return res.json();
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) return [];
+    return data;
   },
 
   async sendMessage(userId: number, chatId: number, text: string): Promise<MessageItem> {

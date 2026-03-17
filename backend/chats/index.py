@@ -36,7 +36,7 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"""
                 SELECT id, username, display_name, avatar, last_seen
                 FROM {SCHEMA}.users
-                WHERE username ILIKE '%{q}%' OR display_name ILIKE '%{q}%'
+                WHERE (username ILIKE '%{q}%' OR display_name ILIKE '%{q}%')
                 AND id != {user_id}
                 LIMIT 20
             """)
